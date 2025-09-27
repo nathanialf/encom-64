@@ -1,0 +1,66 @@
+# Build artifacts
+build/
+*.elf
+*.z64
+*.n64
+*.o
+*.a
+*.map
+
+# Generated files
+src/generated/
+map_response.json
+
+# Development tools (downloaded during build)
+tools/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Jenkins artifacts
+build-info.txt
+encom-64-build-*.z64
+
+# Backup files
+*.bak
+*.backup
+
+# Compressed files (avoid committing large toolchain downloads)
+*.tar.gz
+*.deb
+*.zip
+*.7z
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.coverage
+.pytest_cache/
+
+# Node.js (if any build tools added)
+node_modules/
+npm-debug.log*
+
+# Local development overrides
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
