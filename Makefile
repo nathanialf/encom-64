@@ -100,6 +100,9 @@ test: $(ROM_NAME)
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -f $(ELF_NAME) $(ROM_NAME)
+
+# Clean everything including generated files
+distclean: clean
 	rm -f $(GEN_DIR)/*.h
 
 # Show help
