@@ -5,7 +5,7 @@ BUILD_DIR = build
 N64_INST ?= /opt/libdragon
 include $(N64_INST)/include/n64.mk
 
-OBJS = $(BUILD_DIR)/main.o
+OBJS = $(BUILD_DIR)/main.o $(BUILD_DIR)/hexagon.o $(BUILD_DIR)/render.o
 
 encom-64.z64: N64_ROM_TITLE = "ENCOM-64"
 encom-64.z64: $(BUILD_DIR)/encom-64.dfs
@@ -17,6 +17,12 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 $(BUILD_DIR)/main.o: src/core/main.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/hexagon.o: src/core/hexagon.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/render.o: src/core/render.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
