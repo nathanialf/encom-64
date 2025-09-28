@@ -1,234 +1,216 @@
-/*
- * ENCOM-64 - Nintendo 64 Dungeon Explorer
- * Main entry point and game loop
- */
-
 #include <stdio.h>
-#include <malloc.h>
-#include <string.h>
-#include <stdint.h>
 #include <math.h>
-
 #include <libdragon.h>
+#include <rdpq.h>
+#include <rdpq_tri.h>
+#include <rdpq_mode.h>
+#include "../generated/map_data.h"
 
-// Include generated map data
-#include "map_data.h"
+static resolution_t res = RESOLUTION_320x240;
+static bitdepth_t bit = DEPTH_32_BPP;
 
-// Game constants
-#define SCREEN_WIDTH 320
-#define SCREEN_HEIGHT 240
-#define FPS_TARGET 30
+static int camera_yaw = 0;   // Horizontal rotation (integer degrees)
+static float player_x = 0.0f;  // Player position in room
+static float player_z = 0.0f;
 
-// Game state
-typedef struct {
-    int32_t player_x, player_z;  // 16.16 fixed-point position
-    uint16_t player_rotation;    // 0-65535 (0-360 degrees)
-    uint8_t current_hex;         // Index into map_hexagons
-    uint8_t debug_mode;          // Show debug info
-} game_state_t;
 
-static game_state_t game_state;
-static display_context_t disp = 0;
-
-// Function prototypes
-void init_game(void);
-void update_game(void);
-void render_game(void);
-void handle_input(void);
-void draw_debug_info(void);
-
-/*
- * Initialize the game
- */
-void init_game(void) {
-    // Initialize display
-    display_init(RESOLUTION_320x240, DEPTH_16_BPP, 2, GAMMA_NONE, FILTERS_RESAMPLE);
-    
-    // Initialize controller
+int main(void)
+{
+    /* Initialize peripherals */
+    display_init( res, bit, 2, GAMMA_NONE, FILTERS_RESAMPLE );
+    dfs_init( DFS_DEFAULT_LOCATION );
     joypad_init();
-    
-    // Initialize timer for FPS control
-    timer_init();
-    
-    // Initialize game state
-    memset(&game_state, 0, sizeof(game_state_t));
-    
-    // Start player at first hex
-    if (MAP_HEX_COUNT > 0) {
-        game_state.player_x = map_hexagons[0].x_fixed;
-        game_state.player_z = map_hexagons[0].z_fixed;
-        game_state.current_hex = 0;
-    }
-    
-    game_state.player_rotation = 0;
-    game_state.debug_mode = 1;  // Start with debug on
-    
-    printf("ENCOM-64 Initialized\n");
-    printf("Map: %d hexagons, seed: %s\n", MAP_HEX_COUNT, MAP_SEED);
-    printf("Color index: %d\n", MAP_COLOR_INDEX);
-}
+    rdpq_init();
 
-/*
- * Handle controller input
- */
-void handle_input(void) {
-    joypad_poll();
-    joypad_buttons_t keys = joypad_get_buttons_pressed(JOYPAD_PORT_1);
-    joypad_buttons_t keys_held = joypad_get_buttons_held(JOYPAD_PORT_1);
-    joypad_inputs_t inputs = joypad_get_inputs(JOYPAD_PORT_1);
-    
-    // Debug toggle (Start button)
-    if (keys.start) {
-        game_state.debug_mode = !game_state.debug_mode;
-    }
-    
-    // Movement with analog stick (if held)
-    if (inputs.stick_x != 0 || inputs.stick_y != 0) {
-        // Convert stick input to movement
-        // stick_x: -80 to +80, stick_y: -80 to +80
-        
-        // Forward/backward (Y axis)
-        int32_t forward_speed = (inputs.stick_y * 15 * 65536) / (80 * FPS_TARGET);
-        
-        // Strafe left/right (X axis)  
-        int32_t strafe_speed = (inputs.stick_x * 15 * 65536) / (80 * FPS_TARGET);
-        
-        // Apply rotation to movement vector
-        // For now, just move in world coordinates (no rotation)
-        game_state.player_z += forward_speed;
-        game_state.player_x += strafe_speed;
-    }
-    
-    // Look around with C buttons
-    if (keys_held.c_right) {
-        game_state.player_rotation += 1000;  // Rotate right
-    }
-    if (keys_held.c_left) {
-        game_state.player_rotation -= 1000;  // Rotate left
-    }
-    if (keys_held.c_up) {
-        // Could be used for looking up/down in future
-    }
-    if (keys_held.c_down) {
-        // Could be used for looking up/down in future
-    }
-}
 
-/*
- * Update game logic
- */
-void update_game(void) {
-    // Handle input
-    handle_input();
-    
-    // TODO: Add collision detection
-    // TODO: Update current hex based on position
-    // TODO: Add physics/movement smoothing
-}
+    /* Main loop test */
+    while(1) 
+    {
+        char tStr[256];
+        static display_context_t disp = 0;
 
-/*
- * Draw debug information
- */
-void draw_debug_info(void) {
-    if (!game_state.debug_mode) return;
-    
-    // Get colors from current palette
-    uint16_t bright_color = GET_BRIGHT_COLOR();
-    
-    // Convert fixed-point positions to display
-    int player_x_display = FIXED_TO_INT(game_state.player_x);
-    int player_z_display = FIXED_TO_INT(game_state.player_z);
-    
-    // Draw debug text (white background for visibility)
-    graphics_set_color(0xFFFF, 0x0000);  // White text, black background
-    
-    char text_buffer[64];
-    
-    graphics_draw_text(disp, 10, 10, "ENCOM-64 DEBUG");
-    
-    sprintf(text_buffer, "Pos: (%d, %d)", player_x_display, player_z_display);
-    graphics_draw_text(disp, 10, 25, text_buffer);
-    
-    sprintf(text_buffer, "Rot: %d", game_state.player_rotation);
-    graphics_draw_text(disp, 10, 40, text_buffer);
-    
-    sprintf(text_buffer, "Hex: %d/%d", game_state.current_hex, MAP_HEX_COUNT);
-    graphics_draw_text(disp, 10, 55, text_buffer);
-    
-    sprintf(text_buffer, "Seed: %s", MAP_SEED);
-    graphics_draw_text(disp, 10, 70, text_buffer);
-    
-    sprintf(text_buffer, "Color: 0x%04X", bright_color);
-    graphics_draw_text(disp, 10, 85, text_buffer);
-    
-    graphics_draw_text(disp, 10, 210, "START: Toggle Debug");
-    graphics_draw_text(disp, 10, 225, "Stick: Move, C: Look");
-}
+        /* Grab a render buffer */
+        disp = display_get();
+       
+        /*Fill the screen */
+        graphics_fill_screen( disp, 0 );
 
-/*
- * Render the game
- */
-void render_game(void) {
-    // Wait for display
-    disp = display_get();
-    
-    // Clear screen with dark color from current palette
-    uint16_t dark_color = GET_DARK_COLOR();
-    graphics_fill_screen(disp, dark_color);
-    
-    // TODO: Render 3D hex world
-    // For now, just draw a simple representation
-    
-    // Get current palette colors
-    uint16_t medium_color = GET_MEDIUM_COLOR();
-    uint16_t bright_color = GET_BRIGHT_COLOR();
-    
-    // Draw a simple "hex" in the center to show we're working
-    int center_x = SCREEN_WIDTH / 2;
-    int center_y = SCREEN_HEIGHT / 2;
-    int hex_size = 30;
-    
-    // Draw hex outline (simplified as circle for now)
-    graphics_set_color(bright_color, 0x0000);
-    for (int i = 0; i < 6; i++) {
-        int angle = i * 60;
-        int x1 = center_x + (hex_size * cos(angle * 3.14159 / 180));
-        int y1 = center_y + (hex_size * sin(angle * 3.14159 / 180));
-        int x2 = center_x + (hex_size * cos((angle + 60) * 3.14159 / 180));
-        int y2 = center_y + (hex_size * sin((angle + 60) * 3.14159 / 180));
+        /* Handle analog stick input for camera yaw */
+        joypad_poll();
+        joypad_inputs_t joypad = joypad_get_inputs(JOYPAD_PORT_1);
         
-        graphics_draw_line(disp, x1, y1, x2, y2, bright_color);
-    }
-    
-    // Draw debug information
-    draw_debug_info();
-    
-    // Show the display
-    display_show(disp);
-}
-
-/*
- * Main game loop
- */
-int main(void) {
-    // Initialize systems
-    init_game();
-    
-    printf("Starting main game loop...\n");
-    
-    // Main game loop
-    while (1) {
-        // Target 30 FPS timing
-        static uint32_t last_time = 0;
-        uint32_t current_time = timer_ticks();
-        uint32_t target_ticks = TICKS_PER_SECOND / FPS_TARGET;
+        // Analog stick X controls yaw (left/right look)
+        if(joypad.stick_x > 30 || joypad.stick_x < -30) {
+            camera_yaw -= joypad.stick_x / 20;  // Right stick = clockwise (positive yaw)
+            while(camera_yaw >= 360) camera_yaw -= 360;
+            while(camera_yaw < 0) camera_yaw += 360;
+        }
         
-        if (current_time - last_time >= target_ticks) {
-            update_game();
-            render_game();
-            last_time = current_time;
+        // Analog stick Y controls forward/backward movement
+        if(joypad.stick_y > 30 || joypad.stick_y < -30) {
+            float move_speed = 1.25f;
+            float yaw_rad = (camera_yaw * 3.14159f) / 180.0f;
+            
+            // Move forward/backward based on camera direction
+            // Forward stick (negative Y) should move in camera facing direction
+            // Backward stick (positive Y) should move opposite to camera facing direction
+            float movement = (joypad.stick_y / 128.0f) * move_speed;  // Removed negative sign to fix direction
+            
+            player_x += sinf(-yaw_rad) * movement;  // East/West component  
+            player_z += cosf(-yaw_rad) * movement;  // North/South component
+            
+            // No artificial boundary - walls will stop us later
+        }
+
+
+
+        /* Render 3D hexagon floor with RDP triangles */
+        // Setup RDP for triangle rendering
+        rdpq_attach(disp, NULL);
+        rdpq_set_mode_fill(RGBA32(128, 0, 0, 255));  // Red background/skybox
+        rdpq_fill_rectangle(0, 0, 320, 240);
+        
+        rdpq_set_mode_standard();
+        rdpq_mode_combiner(RDPQ_COMBINER_FLAT);
+        rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
+        
+        // 3D hexagon vertices (world coordinates) - room-sized floor
+        static const float hex_world_x[6] = { 50.0f, 25.0f, -25.0f, -50.0f, -25.0f, 25.0f };
+        static const float hex_world_z[6] = { 0.0f, 43.0f, 43.0f, 0.0f, -43.0f, -43.0f };
+        static const float hex_world_y = 0.0f;  // Floor level 
+        
+        // Camera parameters - following player position
+        float camera_x = player_x;  // Camera follows player X
+        float camera_y = 10.0f;     // Eye level ABOVE the floor
+        float camera_z = player_z;  // Camera follows player Z
+        float focal_length = 277.0f;  // 60 degree FOV
+        
+        // Convert yaw to radians (no pitch - looking straight forward)
+        float yaw_rad = (camera_yaw * 3.14159f) / 180.0f;
+        
+        // Project 3D vertices to 2D screen coordinates
+        float screen_x[6], screen_y[6];
+        for(int i = 0; i < 6; i++) {
+            // Hexagon vertices in world space (fixed)
+            float world_x = hex_world_x[i];
+            float world_y = hex_world_y;
+            float world_z = hex_world_z[i];
+            
+            // Translate relative to camera position
+            float rel_x = world_x - camera_x;
+            float rel_y = world_y - camera_y;  // Floor is below camera
+            float rel_z = world_z - camera_z;
+            
+            // Rotate the view around the camera (inverse rotation)
+            float view_x = rel_x * cosf(-yaw_rad) - rel_z * sinf(-yaw_rad);
+            float view_z = rel_x * sinf(-yaw_rad) + rel_z * cosf(-yaw_rad);
+            
+            // Small Z offset to ensure positive depth for projection stability
+            view_z += 10.0f;
+            
+            // 3D to 2D projection (no pitch - looking straight forward)
+            // Always calculate projection, even if result goes offscreen
+            if(view_z > 0.001f) {  // Just prevent division by zero
+                screen_x[i] = 160.0f + (view_x * focal_length) / view_z;
+                screen_y[i] = 120.0f - (rel_y * focal_length) / view_z;  // Below camera = below horizon
+            } else {
+                // Very close to zero - use small value to prevent division by zero
+                screen_x[i] = 160.0f + (view_x * focal_length) / 0.001f;
+                screen_y[i] = 120.0f - (rel_y * focal_length) / 0.001f;
+            }
+            
+            // Clamp to reasonable offscreen bounds to prevent RDP issues
+            if(screen_x[i] < -500.0f) screen_x[i] = -500.0f;
+            if(screen_x[i] > 820.0f) screen_x[i] = 820.0f;
+            if(screen_y[i] < -500.0f) screen_y[i] = -500.0f;
+            if(screen_y[i] > 740.0f) screen_y[i] = 740.0f;
+        }
+        
+        
+        // Define triangle format for flat shading
+        rdpq_trifmt_t trifmt = (rdpq_trifmt_t){
+            .pos_offset = 0,
+            .shade_offset = -1,  // No per-vertex shading
+            .tex_offset = -1,    // No texture
+            .z_offset = -1       // No Z-buffer
+        };
+        
+        // Set fill color (gray)
+        rdpq_set_prim_color(RGBA32(128, 128, 128, 255));
+        
+        // Draw triangles forming flat hexagon plane (use better triangulation)
+        // Draw as 4 triangles instead of 6 triangles from center
+        // This avoids always having lines going to screen center
+        
+        // Triangle 1: vertices 0, 1, 2
+        float v1[2] = { screen_x[0], screen_y[0] };
+        float v2[2] = { screen_x[1], screen_y[1] };
+        float v3[2] = { screen_x[2], screen_y[2] };
+        rdpq_triangle(&trifmt, v1, v2, v3);
+        
+        // Triangle 2: vertices 0, 2, 3  
+        float v4[2] = { screen_x[0], screen_y[0] };
+        float v5[2] = { screen_x[2], screen_y[2] };
+        float v6[2] = { screen_x[3], screen_y[3] };
+        rdpq_triangle(&trifmt, v4, v5, v6);
+        
+        // Triangle 3: vertices 0, 3, 4
+        float v7[2] = { screen_x[0], screen_y[0] };
+        float v8[2] = { screen_x[3], screen_y[3] };
+        float v9[2] = { screen_x[4], screen_y[4] };
+        rdpq_triangle(&trifmt, v7, v8, v9);
+        
+        // Triangle 4: vertices 0, 4, 5
+        float v10[2] = { screen_x[0], screen_y[0] };
+        float v11[2] = { screen_x[4], screen_y[4] };
+        float v12[2] = { screen_x[5], screen_y[5] };
+        rdpq_triangle(&trifmt, v10, v11, v12);
+        
+        rdpq_detach();
+
+        // Draw debug text after RDP operations
+        sprintf(tStr, "Map: %s (%d hexes)\n", MAP_SEED, MAP_HEX_COUNT);
+        graphics_draw_text( disp, 20, 20, tStr );
+        sprintf(tStr, "Yaw: %d, Pos: %.1f,%.1f\n", camera_yaw, player_x, player_z);
+        graphics_draw_text( disp, 20, 30, tStr );
+        sprintf(tStr, "Stick X: %d, Y: %d\n", joypad.stick_x, joypad.stick_y);
+        graphics_draw_text( disp, 20, 40, tStr );
+
+        display_show(disp);
+
+        /* Do we need to switch video displays? */
+        joypad_buttons_t keys = joypad_get_buttons_pressed(JOYPAD_PORT_1);
+
+        if( keys.d_up )
+        {
+            display_close();
+
+            res = RESOLUTION_640x480;
+            display_init( res, bit, 2, GAMMA_NONE, FILTERS_DISABLED );
+        }
+
+        if( keys.d_down )
+        {
+            display_close();
+
+            res = RESOLUTION_320x240;
+            display_init( res, bit, 2, GAMMA_NONE, FILTERS_DISABLED );
+        }
+
+        if( keys.d_left )
+        {
+            display_close();
+
+            bit = DEPTH_16_BPP;
+            display_init( res, bit, 2, GAMMA_NONE, FILTERS_DISABLED );
+        }
+
+        if( keys.d_right )
+        {
+            display_close();
+
+            bit = DEPTH_32_BPP;
+            display_init( res, bit, 2, GAMMA_NONE, FILTERS_DISABLED );
         }
     }
-    
-    return 0;
 }

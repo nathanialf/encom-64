@@ -92,15 +92,16 @@ encom-64/
 - ✅ **Map Data Integration**: Converts ENCOM API maps to C structures  
 - ✅ **Color System**: 5 terminal palettes selected by map seed hash
 - ✅ **Debug Display**: Shows position, rotation, current hex, map seed
-- ✅ **Controller Input**: Analog stick movement, C-button camera
+- ✅ **Controller Input**: Analog stick movement with deadzones, camera rotation
 - ✅ **Proper ROM Header**: Uses n64tool for valid N64 ROM structure
-- 🔄 **Simple Rendering**: Basic hex outline display (working)
+- ✅ **3D Hexagon Floor**: First-person perspective with RDP triangle rendering
+- ✅ **Movement System**: Forward/backward movement matching camera direction
 
 ### Planned Features (Future Phases)
-- 🔄 **3D Hex Rendering**: Floor, ceiling, and wall geometry
-- 🔄 **Collision Detection**: Wall boundaries and movement constraints
+- 🔄 **Wall Rendering**: Vertical barriers between unconnected hexagons
+- 🔄 **Collision Detection**: Wall boundaries and movement constraints  
 - 🔄 **Performance Optimization**: Display lists and culling
-- 🔄 **Enhanced Controls**: Smooth movement and camera rotation
+- 🔄 **Multi-Room Navigation**: Portal connections between hex rooms
 
 ## Technical Details
 
@@ -175,11 +176,13 @@ ROMs are named with build metadata:
 - [x] Map data integration from ENCOM API
 - [x] Debug display and controller input
 - [x] Project64 emulator compatibility
+- [x] 3D hexagon floor rendering with first-person camera
+- [x] Directional movement system with analog stick controls
 
 ### Phase 2: Core Gameplay
-- [ ] 3D hex rendering (simplified geometry)
-- [ ] Wall placement and collision
-- [ ] Smooth movement and camera
+- [ ] Wall rendering between unconnected hexagons
+- [ ] Collision detection for movement boundaries
+- [ ] Multiple hexagon room navigation
 - [ ] Performance optimization
 
 ### Phase 3: Polish
