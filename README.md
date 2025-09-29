@@ -94,11 +94,13 @@ encom-64/
 - ✅ **Debug Display**: Shows position, rotation, current hex, map seed
 - ✅ **Controller Input**: Analog stick movement with deadzones, camera rotation
 - ✅ **Proper ROM Header**: Uses n64tool for valid N64 ROM structure
-- ✅ **3D Hexagon Floor**: First-person perspective with RDP triangle rendering
+- ✅ **3D Hexagon Rendering**: Floor and wall geometry with first-person perspective
 - ✅ **Movement System**: Forward/backward movement matching camera direction
+- ✅ **Wall System**: Connection-based walls only render where no hexagon connections exist
+- ✅ **Depth Sorting**: Painter's algorithm for proper rendering priority
+- ✅ **Floor Visibility**: Improved projection to prevent floor disappearing when camera is overhead
 
 ### Planned Features (Future Phases)
-- 🔄 **Wall Rendering**: Vertical barriers between unconnected hexagons
 - 🔄 **Collision Detection**: Wall boundaries and movement constraints  
 - 🔄 **Performance Optimization**: Display lists and culling
 - 🔄 **Multi-Room Navigation**: Portal connections between hex rooms
@@ -178,9 +180,11 @@ ROMs are named with build metadata:
 - [x] Project64 emulator compatibility
 - [x] 3D hexagon floor rendering with first-person camera
 - [x] Directional movement system with analog stick controls
+- [x] Complete wall rendering system with connection-based logic
+- [x] Depth sorting for proper rendering priority
+- [x] Fixed floor visibility issues with improved projection
 
 ### Phase 2: Core Gameplay
-- [ ] Wall rendering between unconnected hexagons
 - [ ] Collision detection for movement boundaries
 - [ ] Multiple hexagon room navigation
 - [ ] Performance optimization

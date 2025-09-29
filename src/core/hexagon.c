@@ -20,8 +20,9 @@ void hexagon_init(hexagon_t* hex, const hex_t* map_data) {
     float spacing_z = 1.732f * radius;      // ~86.6 units (vertical center spacing)
     
     // Convert q, r to world coordinates (axial to cartesian for FLAT-TOP)
+    // Mirror along Z axis only to fix map orientation
     hex->center_x = spacing_x * map_data->q;
-    hex->center_z = spacing_z * (map_data->r + map_data->q * 0.5f);
+    hex->center_z = -spacing_z * (map_data->r + map_data->q * 0.5f);
     
     hex->connections = map_data->connections;
     hex->type = map_data->type;

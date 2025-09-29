@@ -101,11 +101,39 @@ int main(void)
             .z_offset = -1       // No Z-buffer
         };
         
-        // Render all hexagons from map data
+        // Create array of hexagon indices with distances for depth sorting
+        typedef struct {
+            int index;
+            float distance;
+        } hexagon_distance_t;
+        
+        hexagon_distance_t hex_distances[MAP_HEX_COUNT];
+        
+        // Calculate distance from camera to each hexagon center
         for(int i = 0; i < MAP_HEX_COUNT; i++) {
-            render_hexagon_floor(&hexagons[i], &camera, &trifmt);
-            render_hexagon_pillars(&hexagons[i], &camera, &trifmt);
-            render_hexagon_walls(&hexagons[i], &camera, &trifmt);
+            float dx = hexagons[i].center_x - camera.x;
+            float dz = hexagons[i].center_z - camera.z;
+            hex_distances[i].index = i;
+            hex_distances[i].distance = sqrtf(dx*dx + dz*dz);
+        }
+        
+        // Simple bubble sort to sort hexagons by distance (far to near)
+        for(int i = 0; i < MAP_HEX_COUNT - 1; i++) {
+            for(int j = 0; j < MAP_HEX_COUNT - 1 - i; j++) {
+                if(hex_distances[j].distance < hex_distances[j+1].distance) {
+                    hexagon_distance_t temp = hex_distances[j];
+                    hex_distances[j] = hex_distances[j+1];
+                    hex_distances[j+1] = temp;
+                }
+            }
+        }
+        
+        // Render all hexagons from farthest to nearest (painter's algorithm)
+        for(int i = 0; i < MAP_HEX_COUNT; i++) {
+            int hex_idx = hex_distances[i].index;
+            render_hexagon_floor(&hexagons[hex_idx], &camera, &trifmt);
+            render_hexagon_pillars(&hexagons[hex_idx], &camera, &trifmt);
+            render_hexagon_walls(&hexagons[hex_idx], &camera, &trifmt);
         }
         
         rdpq_detach();
