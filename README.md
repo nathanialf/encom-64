@@ -21,7 +21,7 @@ ENCOM-64 brings the ENCOM dungeon exploration experience to the Nintendo 64, fea
 - **Resolution**: 320×240
 - **Frame Rate**: 30 FPS target
 - **Memory**: 4MB RAM (expandable to 8MB if needed)
-- **Map Size**: 10 hexagons initially (scalable based on performance)
+- **Map Size**: 25 hexagons
 - **ROM Format**: Z64 (byte-swapped)
 
 ## Development Setup
@@ -35,7 +35,7 @@ ENCOM-64 brings the ENCOM dungeon exploration experience to the Nintendo 64, fea
 The project is designed for Jenkins automation:
 
 1. **Setup Toolchain**: Downloads and builds libdragon SDK (cached between builds)
-2. **Fetch Map Data**: Calls ENCOM API with small map request (10 hexagons)
+2. **Fetch Map Data**: Calls ENCOM API with map request (25 hexagons)
 3. **Generate Headers**: Converts JSON to C structures with fixed-point math
 4. **Build ROM**: Compiles and links N64 ROM using MIPS toolchain
 5. **Run Tests**: Validates ROM integrity and size constraints
@@ -56,7 +56,7 @@ cd libdragon && ./build.sh
 # Fetch and convert map data
 curl -X POST https://encom-api-dev.riperoni.com/api/v1/map/generate \
      -H "Content-Type: application/json" \
-     -d '{"hexagonCount": 10}' \
+     -d '{"hexagonCount": 25}' \
      -o map_response.json
 
 python3 scripts/map_converter.py map_response.json src/generated/map_data.h
@@ -99,11 +99,14 @@ encom-64/
 - ✅ **Wall System**: Connection-based walls only render where no hexagon connections exist
 - ✅ **Depth Sorting**: Painter's algorithm for proper rendering priority
 - ✅ **Floor Visibility**: Improved projection to prevent floor disappearing when camera is overhead
+- ✅ **Collision Detection**: Wall boundaries and doorframe collision detection
+- ✅ **Doorway System**: Corridors with doorways and doorframes, rooms without walls
+- ✅ **Ceiling Rendering**: Complete 3D environment with floors, walls, and ceilings
 
 ### Planned Features (Future Phases)
-- 🔄 **Collision Detection**: Wall boundaries and movement constraints  
 - 🔄 **Performance Optimization**: Display lists and culling
 - 🔄 **Multi-Room Navigation**: Portal connections between hex rooms
+- 🔄 **Texture System**: Wall and floor textures
 
 ## Technical Details
 
@@ -134,9 +137,9 @@ typedef struct {
 ```
 
 ### Performance Targets
-- **Triangle Budget**: ~250 triangles/frame (10 hexes × 25 triangles)
-- **Memory Usage**: <1MB ROM, ~100KB RAM for game state
-- **Frame Rate**: Stable 30 FPS with room for expansion
+- **Triangle Budget**: ~600 triangles/frame (25 hexes with floors, walls, ceilings)
+- **Memory Usage**: <1MB ROM, ~150KB RAM for game state
+- **Frame Rate**: 30 FPS target
 
 ## Testing
 
@@ -184,12 +187,14 @@ ROMs are named with build metadata:
 - [x] Depth sorting for proper rendering priority
 - [x] Fixed floor visibility issues with improved projection
 
-### Phase 2: Core Gameplay
-- [ ] Collision detection for movement boundaries
-- [ ] Multiple hexagon room navigation
-- [ ] Performance optimization
+### Phase 2: Core Gameplay (Completed)
+- [x] Collision detection for movement boundaries
+- [x] Doorway system with doorframes
+- [x] Ceiling rendering for complete 3D environment
+- [x] Navigation through hexagon rooms and corridors
 
 ### Phase 3: Polish
+- [ ] Performance optimization
 - [ ] Enhanced visuals
 - [ ] Larger map support
 - [ ] Audio integration (future)

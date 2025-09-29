@@ -16,7 +16,7 @@ static float player_x = 0.0f;  // Player position in room
 static float player_z = 0.0f;
 
 // Hexagon objects for all map hexagons
-static hexagon_t hexagons[MAP_HEX_COUNT];
+hexagon_t hexagons[MAP_HEX_COUNT];
 
 
 int main(void)
@@ -61,15 +61,16 @@ int main(void)
             float move_speed = 1.25f;
             float yaw_rad = (camera_yaw * 3.14159f) / 180.0f;
             
-            // Move forward/backward based on camera direction
-            // Forward stick (negative Y) should move in camera facing direction
-            // Backward stick (positive Y) should move opposite to camera facing direction
-            float movement = (joypad.stick_y / 128.0f) * move_speed;  // Removed negative sign to fix direction
+            // Calculate proposed movement
+            float movement = (joypad.stick_y / 128.0f) * move_speed;
+            float new_x = player_x + sinf(-yaw_rad) * movement;
+            float new_z = player_z + cosf(-yaw_rad) * movement;
             
-            player_x += sinf(-yaw_rad) * movement;  // East/West component  
-            player_z += cosf(-yaw_rad) * movement;  // North/South component
-            
-            // No artificial boundary - walls will stop us later
+            // Check collision before moving (player radius = 3 units)
+            if(!check_collision(new_x, new_z, 3.0f)) {
+                player_x = new_x;
+                player_z = new_z;
+            }
         }
 
 
@@ -109,12 +110,12 @@ int main(void)
         
         hexagon_distance_t hex_distances[MAP_HEX_COUNT];
         
-        // Calculate distance from camera to each hexagon center
+        // Calculate squared distance from camera to each hexagon center
         for(int i = 0; i < MAP_HEX_COUNT; i++) {
             float dx = hexagons[i].center_x - camera.x;
             float dz = hexagons[i].center_z - camera.z;
             hex_distances[i].index = i;
-            hex_distances[i].distance = sqrtf(dx*dx + dz*dz);
+            hex_distances[i].distance = dx*dx + dz*dz;  // Use squared distance
         }
         
         // Simple bubble sort to sort hexagons by distance (far to near)
@@ -128,12 +129,91 @@ int main(void)
             }
         }
         
-        // Render all hexagons from farthest to nearest (painter's algorithm)
+        // Render ceilings first (back to front, farthest geometry)
         for(int i = 0; i < MAP_HEX_COUNT; i++) {
             int hex_idx = hex_distances[i].index;
-            render_hexagon_floor(&hexagons[hex_idx], &camera, &trifmt);
-            render_hexagon_pillars(&hexagons[hex_idx], &camera, &trifmt);
-            render_hexagon_walls(&hexagons[hex_idx], &camera, &trifmt);
+            // Distance culling for ceilings (squared distance)
+            if(hex_distances[i].distance < 160000.0f) {
+                render_hexagon_ceiling(&hexagons[hex_idx], &camera, &trifmt);
+            }
+        }
+        
+        // Render floors (back to front)
+        for(int i = 0; i < MAP_HEX_COUNT; i++) {
+            int hex_idx = hex_distances[i].index;
+            // Distance culling for floors (squared distance)
+            if(hex_distances[i].distance < 160000.0f) {
+                render_hexagon_floor(&hexagons[hex_idx], &camera, &trifmt);
+            }
+        }
+        
+        // Collect all wall segments for depth sorting
+        wall_segment_t wall_segments[MAP_HEX_COUNT * 6];
+        int wall_count = 0;
+        
+        for(int hex_i = 0; hex_i < MAP_HEX_COUNT; hex_i++) {
+            hexagon_t* hex = &hexagons[hex_i];
+            
+            // Calculate wall segment distances for each direction
+            for(int wall_dir = 0; wall_dir < 6; wall_dir++) {
+                // Only add walls that will actually render
+                int should_render = 0;
+                switch(wall_dir) {
+                    case 2: // North
+                        should_render = (!(hex->connections & CONN_NORTH)) || (hex->type == HEX_TYPE_CORRIDOR);
+                        break;
+                    case 5: // South
+                        should_render = (!(hex->connections & CONN_SOUTH)) || (hex->type == HEX_TYPE_CORRIDOR);
+                        break;
+                    case 0: // Southeast
+                        should_render = (!(hex->connections & CONN_SOUTHEAST)) || (hex->type == HEX_TYPE_CORRIDOR);
+                        break;
+                    case 1: // Northeast
+                        should_render = (!(hex->connections & CONN_NORTHEAST)) || (hex->type == HEX_TYPE_CORRIDOR);
+                        break;
+                    case 3: // Northwest
+                        should_render = (!(hex->connections & CONN_NORTHWEST)) || (hex->type == HEX_TYPE_CORRIDOR);
+                        break;
+                    case 4: // Southwest
+                        should_render = (!(hex->connections & CONN_SOUTHWEST)) || (hex->type == HEX_TYPE_CORRIDOR);
+                        break;
+                }
+                
+                if(should_render) {
+                    // Calculate squared distance (avoid expensive sqrt)
+                    float wall_center_x = hex->center_x;
+                    float wall_center_z = hex->center_z;
+                    float dx = wall_center_x - camera.x;
+                    float dz = wall_center_z - camera.z;
+                    float dist_sq = dx*dx + dz*dz;
+                    
+                    // Skip walls that are too far away (distance culling)
+                    if(dist_sq > 160000.0f) continue;  // ~400 unit cutoff
+                    
+                    wall_segments[wall_count].distance = dist_sq;
+                    wall_segments[wall_count].hex = hex;
+                    wall_segments[wall_count].wall_dir = wall_dir;
+                    wall_count++;
+                }
+            }
+        }
+        
+        // Sort wall segments by distance (far to near) using insertion sort
+        for(int i = 1; i < wall_count; i++) {
+            wall_segment_t key = wall_segments[i];
+            int j = i - 1;
+            
+            // Move elements that are closer than key to one position ahead
+            while(j >= 0 && wall_segments[j].distance < key.distance) {
+                wall_segments[j + 1] = wall_segments[j];
+                j--;
+            }
+            wall_segments[j + 1] = key;
+        }
+        
+        // Render wall segments in depth order
+        for(int i = 0; i < wall_count; i++) {
+            render_single_wall(wall_segments[i].hex, wall_segments[i].wall_dir, &camera, &trifmt);
         }
         
         rdpq_detach();
