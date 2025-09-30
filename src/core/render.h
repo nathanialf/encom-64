@@ -39,7 +39,14 @@ void render_single_wall(hexagon_t* hex, int wall_dir, camera_t* cam, rdpq_trifmt
 
 // Collision detection
 int check_collision(float new_x, float new_z, float player_radius);
+int check_collision_with_slide(float old_x, float old_z, float *new_x, float *new_z, float player_radius);
 float point_to_line_distance(float px, float pz, float x1, float z1, float x2, float z2);
 int check_doorframe_collision(hexagon_t* hex, int wall_dir, int v1_idx, int v2_idx, float new_x, float new_z, float player_radius);
+
+// Performance optimizations
+int is_hexagon_in_frustum(hexagon_t* hex, camera_t* cam);
+int should_render_hexagon(hexagon_t* hex, camera_t* cam);
+int get_hexagon_lod_level(hexagon_t* hex, camera_t* cam);
+void render_hexagon_floor_lod(hexagon_t* hex, camera_t* cam, rdpq_trifmt_t* trifmt, int lod_level);
 
 #endif // RENDER_H

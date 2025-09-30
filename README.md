@@ -192,6 +192,7 @@ ROMs are named with build metadata:
 - [x] Doorway system with doorframes
 - [x] Ceiling rendering for complete 3D environment
 - [x] Navigation through hexagon rooms and corridors
+- [x] Wall sliding collision system for natural movement
 
 ### Phase 3: Polish
 - [ ] Performance optimization

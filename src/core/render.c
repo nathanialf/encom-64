@@ -241,6 +241,11 @@ static void render_wall_segment(hexagon_t* hex, camera_t* cam, rdpq_trifmt_t* tr
 
 // Helper function to render doorway (partial walls from pillars with center gap)
 static void render_doorway_segment(hexagon_t* hex, camera_t* cam, rdpq_trifmt_t* trifmt, int v1_idx, int v2_idx) {
+    // Calculate distance for LOD decisions
+    float dx = hex->center_x - cam->x;
+    float dz = hex->center_z - cam->z;
+    float dist_sq = dx*dx + dz*dz;
+    int skip_doorframes = (dist_sq > 40000.0f); // Skip doorframes beyond 200 units
     screen_pos_t wall_bottom[2], wall_top[2];
     wall_bottom[0] = project_vertex(hex->vertices_x[v1_idx], 0.0f, hex->vertices_z[v1_idx], cam);
     wall_bottom[1] = project_vertex(hex->vertices_x[v2_idx], 0.0f, hex->vertices_z[v2_idx], cam);
@@ -292,6 +297,9 @@ static void render_doorway_segment(hexagon_t* hex, camera_t* cam, rdpq_trifmt_t*
             float r6[2] = { right_start_top.x, right_start_top.y };
             rdpq_triangle(trifmt, r4, r5, r6);
         }
+        
+        // Skip doorframes for distant hexagons to save triangles
+        if(skip_doorframes) return;
         
         // Set doorframe color to black
         rdpq_set_prim_color(RGBA32(0, 0, 0, 255));
@@ -457,9 +465,18 @@ void render_single_wall(hexagon_t* hex, int wall_dir, camera_t* cam, rdpq_trifmt
 
 // Check collision with walls - returns 1 if collision detected, 0 if safe
 int check_collision(float new_x, float new_z, float player_radius) {
+    // Quick optimization: only check nearby hexagons for collision
+    // (collision radius + hex size + some margin)
+    float max_collision_dist_sq = (player_radius + 50.0f) * (player_radius + 50.0f);
+    
     // Check against all hexagons and their walls
     for(int hex_i = 0; hex_i < MAP_HEX_COUNT; hex_i++) {
         hexagon_t* hex = &hexagons[hex_i];
+        
+        // Skip hexagons too far away for collision
+        float dx = hex->center_x - new_x;
+        float dz = hex->center_z - new_z;
+        if(dx*dx + dz*dz > max_collision_dist_sq) continue;
         
         // Check each wall direction for this hexagon
         for(int wall_dir = 0; wall_dir < 6; wall_dir++) {
@@ -532,6 +549,137 @@ int check_collision(float new_x, float new_z, float player_radius) {
     return 0; // No collision
 }
 
+// Advanced collision with wall sliding
+int check_collision_with_slide(float old_x, float old_z, float *new_x, float *new_z, float player_radius) {
+    // If no collision at target position, allow movement
+    if(!check_collision(*new_x, *new_z, player_radius)) {
+        return 0; // No collision, movement allowed
+    }
+    
+    // Find the closest wall that's blocking us
+    float closest_dist = 1000000.0f;
+    float wall_x1, wall_z1, wall_x2, wall_z2;
+    int found_wall = 0;
+    
+    float max_collision_dist_sq = (player_radius + 50.0f) * (player_radius + 50.0f);
+    
+    for(int hex_i = 0; hex_i < MAP_HEX_COUNT; hex_i++) {
+        hexagon_t* hex = &hexagons[hex_i];
+        
+        // Skip hexagons too far away
+        float dx = hex->center_x - *new_x;
+        float dz = hex->center_z - *new_z;
+        if(dx*dx + dz*dz > max_collision_dist_sq) continue;
+        
+        for(int wall_dir = 0; wall_dir < 6; wall_dir++) {
+            // Check if this wall exists and is blocking
+            int has_wall = 0;
+            int has_doorway = 0;
+            
+            switch(wall_dir) {
+                case 2: has_wall = !(hex->connections & CONN_NORTH); has_doorway = (hex->connections & CONN_NORTH) && (hex->type == HEX_TYPE_CORRIDOR); break;
+                case 5: has_wall = !(hex->connections & CONN_SOUTH); has_doorway = (hex->connections & CONN_SOUTH) && (hex->type == HEX_TYPE_CORRIDOR); break;
+                case 0: has_wall = !(hex->connections & CONN_SOUTHEAST); has_doorway = (hex->connections & CONN_SOUTHEAST) && (hex->type == HEX_TYPE_CORRIDOR); break;
+                case 1: has_wall = !(hex->connections & CONN_NORTHEAST); has_doorway = (hex->connections & CONN_NORTHEAST) && (hex->type == HEX_TYPE_CORRIDOR); break;
+                case 3: has_wall = !(hex->connections & CONN_NORTHWEST); has_doorway = (hex->connections & CONN_NORTHWEST) && (hex->type == HEX_TYPE_CORRIDOR); break;
+                case 4: has_wall = !(hex->connections & CONN_SOUTHWEST); has_doorway = (hex->connections & CONN_SOUTHWEST) && (hex->type == HEX_TYPE_CORRIDOR); break;
+            }
+            
+            if(has_wall || has_doorway) {
+                int start_vert, end_vert;
+                switch(wall_dir) {
+                    case 2: start_vert = 1; end_vert = 2; break;
+                    case 5: start_vert = 4; end_vert = 5; break;
+                    case 0: start_vert = 5; end_vert = 0; break;
+                    case 1: start_vert = 0; end_vert = 1; break;
+                    case 3: start_vert = 2; end_vert = 3; break;
+                    case 4: start_vert = 3; end_vert = 4; break;
+                }
+                
+                float w_x1 = hex->vertices_x[start_vert];
+                float w_z1 = hex->vertices_z[start_vert];
+                float w_x2 = hex->vertices_x[end_vert];
+                float w_z2 = hex->vertices_z[end_vert];
+                
+                // For doorways, check wall segments but NOT doorframes
+                if(has_doorway) {
+                    // Check left wall segment (first 33% - the actual wall)
+                    float door_gap = 0.33f;
+                    float wall_portion = (1.0f - door_gap) / 2.0f;
+                    float left_end_x = w_x1 + wall_portion * (w_x2 - w_x1);
+                    float left_end_z = w_z1 + wall_portion * (w_z2 - w_z1);
+                    
+                    float dist = point_to_line_distance(*new_x, *new_z, w_x1, w_z1, left_end_x, left_end_z);
+                    if(dist < player_radius && dist < closest_dist) {
+                        closest_dist = dist;
+                        wall_x1 = w_x1; wall_z1 = w_z1; wall_x2 = left_end_x; wall_z2 = left_end_z;
+                        found_wall = 1;
+                    }
+                    
+                    // Check right wall segment (last 33% - the actual wall)
+                    float right_wall_start = 1.0f - wall_portion;
+                    float right_start_x = w_x1 + right_wall_start * (w_x2 - w_x1);
+                    float right_start_z = w_z1 + right_wall_start * (w_z2 - w_z1);
+                    
+                    dist = point_to_line_distance(*new_x, *new_z, right_start_x, right_start_z, w_x2, w_z2);
+                    if(dist < player_radius && dist < closest_dist) {
+                        closest_dist = dist;
+                        wall_x1 = right_start_x; wall_z1 = right_start_z; wall_x2 = w_x2; wall_z2 = w_z2;
+                        found_wall = 1;
+                    }
+                    
+                    // Skip the middle doorframe section - no collision there
+                } else if(has_wall) {
+                    // Check full wall for solid walls
+                    float dist = point_to_line_distance(*new_x, *new_z, w_x1, w_z1, w_x2, w_z2);
+                    if(dist < player_radius && dist < closest_dist) {
+                        closest_dist = dist;
+                        wall_x1 = w_x1; wall_z1 = w_z1; wall_x2 = w_x2; wall_z2 = w_z2;
+                        found_wall = 1;
+                    }
+                }
+            }
+        }
+    }
+    
+    if(!found_wall) {
+        return 1; // Collision but no clear wall found, stop movement
+    }
+    
+    // Calculate wall direction vector
+    float wall_dx = wall_x2 - wall_x1;
+    float wall_dz = wall_z2 - wall_z1;
+    float wall_len = sqrtf(wall_dx*wall_dx + wall_dz*wall_dz);
+    
+    if(wall_len < 0.001f) {
+        return 1; // Degenerate wall, stop movement
+    }
+    
+    // Normalize wall direction
+    wall_dx /= wall_len;
+    wall_dz /= wall_len;
+    
+    // Movement vector
+    float move_dx = *new_x - old_x;
+    float move_dz = *new_z - old_z;
+    
+    // Project movement onto wall direction (slide component)
+    float slide_amount = move_dx * wall_dx + move_dz * wall_dz;
+    
+    // Calculate slide position
+    float slide_x = old_x + wall_dx * slide_amount;
+    float slide_z = old_z + wall_dz * slide_amount;
+    
+    // Check if slide position is valid
+    if(!check_collision(slide_x, slide_z, player_radius)) {
+        *new_x = slide_x;
+        *new_z = slide_z;
+        return 0; // Sliding movement allowed
+    }
+    
+    return 1; // Can't slide, stop movement
+}
+
 // Helper function: distance from point to line segment
 float point_to_line_distance(float px, float pz, float x1, float z1, float x2, float z2) {
     // Vector from line start to end
@@ -593,26 +741,107 @@ int check_doorframe_collision(hexagon_t* hex, int wall_dir, int v1_idx, int v2_i
         return 1;
     }
     
-    // Calculate doorframe collision (frame thickness)
-    float wall_dx = hex->vertices_x[v2_idx] - hex->vertices_x[v1_idx];
-    float wall_dz = hex->vertices_z[v2_idx] - hex->vertices_z[v1_idx];
-    float wall_length = sqrtf(wall_dx * wall_dx + wall_dz * wall_dz);
-    
-    float frame_thickness = 1.5f;
-    float frame_dx = (wall_dx / wall_length) * frame_thickness;
-    float frame_dz = (wall_dz / wall_length) * frame_thickness;
-    
-    // Left doorframe collision (at left wall segment end)
-    if(point_to_line_distance(new_x, new_z, left_end_world_x, left_end_world_z,
-                             left_end_world_x + frame_dx, left_end_world_z + frame_dz) < player_radius) {
-        return 1;
-    }
-    
-    // Right doorframe collision (at right wall segment start)  
-    if(point_to_line_distance(new_x, new_z, right_start_world_x, right_start_world_z,
-                             right_start_world_x - frame_dx, right_start_world_z - frame_dz) < player_radius) {
-        return 1;
-    }
+    // Skip doorframe collision - only check wall segments, not the frame pieces
     
     return 0; // No doorframe collision
+}
+
+// Check if hexagon is within camera frustum (field of view)
+int is_hexagon_in_frustum(hexagon_t* hex, camera_t* cam) {
+    // Simple frustum culling based on angle from camera direction
+    float dx = hex->center_x - cam->x;
+    float dz = hex->center_z - cam->z;
+    float dist_sq = dx*dx + dz*dz;
+    
+    // Always render very close hexagons (player might be standing on them)
+    if(dist_sq < 2500.0f) return 1; // Within 50 units, always render
+    
+    // Camera forward direction
+    float cam_forward_x = sinf(-cam->yaw_rad);
+    float cam_forward_z = cosf(-cam->yaw_rad);
+    
+    // Calculate angle between camera forward and hexagon direction
+    float hex_length = sqrtf(dist_sq);
+    
+    // Normalize hexagon direction
+    float hex_dir_x = dx / hex_length;
+    float hex_dir_z = dz / hex_length;
+    
+    // Dot product to get cosine of angle
+    float cos_angle = cam_forward_x * hex_dir_x + cam_forward_z * hex_dir_z;
+    
+    // Very wide FOV to be safe - only cull hexagons clearly behind camera
+    return cos_angle > -0.7f; // ~135 degree FOV (very wide)
+}
+
+// Combined visibility check: frustum + distance culling
+int should_render_hexagon(hexagon_t* hex, camera_t* cam) {
+    // Distance culling first (cheaper)
+    float dx = hex->center_x - cam->x;
+    float dz = hex->center_z - cam->z;
+    float dist_sq = dx*dx + dz*dz;
+    
+    if(dist_sq > 160000.0f) return 0; // Too far (~400 units)
+    
+    // Frustum culling
+    if(!is_hexagon_in_frustum(hex, cam)) return 0;
+    
+    return 1; // Passed all tests
+}
+
+// Get LOD level based on distance (0 = highest detail, 2 = lowest detail)
+int get_hexagon_lod_level(hexagon_t* hex, camera_t* cam) {
+    float dx = hex->center_x - cam->x;
+    float dz = hex->center_z - cam->z;
+    float dist_sq = dx*dx + dz*dz;
+    
+    if(dist_sq < 10000.0f) return 0;      // < 100 units: full detail
+    if(dist_sq < 40000.0f) return 1;      // < 200 units: medium detail  
+    return 2;                             // > 200 units: low detail
+}
+
+// Render floor with level of detail
+void render_hexagon_floor_lod(hexagon_t* hex, camera_t* cam, rdpq_trifmt_t* trifmt, int lod_level) {
+    // Project hexagon vertices to screen coordinates using floor projection
+    screen_pos_t screen_pos[6];
+    for(int i = 0; i < 6; i++) {
+        screen_pos[i] = project_vertex_floor(hex->vertices_x[i], 0.0f, hex->vertices_z[i], cam);
+    }
+    
+    // Set floor color (gray)
+    rdpq_set_prim_color(RGBA32(128, 128, 128, 255));
+    
+    if(lod_level >= 2) {
+        // LOD 2: Single quad (2 triangles) - very distant
+        float v1[2] = { screen_pos[0].x, screen_pos[0].y };
+        float v2[2] = { screen_pos[2].x, screen_pos[2].y };
+        float v3[2] = { screen_pos[4].x, screen_pos[4].y };
+        rdpq_triangle(trifmt, v1, v2, v3);
+        
+        float v4[2] = { screen_pos[0].x, screen_pos[0].y };
+        float v5[2] = { screen_pos[3].x, screen_pos[3].y };
+        float v6[2] = { screen_pos[4].x, screen_pos[4].y };
+        rdpq_triangle(trifmt, v4, v5, v6);
+    } else if(lod_level == 1) {
+        // LOD 1: Reduced triangles (3 triangles) - medium distance
+        float v1[2] = { screen_pos[0].x, screen_pos[0].y };
+        float v2[2] = { screen_pos[2].x, screen_pos[2].y };
+        float v3[2] = { screen_pos[4].x, screen_pos[4].y };
+        rdpq_triangle(trifmt, v1, v2, v3);
+        
+        float v4[2] = { screen_pos[0].x, screen_pos[0].y };
+        float v5[2] = { screen_pos[1].x, screen_pos[1].y };
+        float v6[2] = { screen_pos[2].x, screen_pos[2].y };
+        rdpq_triangle(trifmt, v4, v5, v6);
+        
+        float v7[2] = { screen_pos[0].x, screen_pos[0].y };
+        float v8[2] = { screen_pos[4].x, screen_pos[4].y };
+        float v9[2] = { screen_pos[5].x, screen_pos[5].y };
+        rdpq_triangle(trifmt, v7, v8, v9);
+    } else {
+        // LOD 0: Full detail (4 triangles) - close distance
+        // Use the original rendering code
+        render_hexagon_floor(hex, cam, trifmt);
+        return;
+    }
 }

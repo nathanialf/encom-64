@@ -66,8 +66,8 @@ int main(void)
             float new_x = player_x + sinf(-yaw_rad) * movement;
             float new_z = player_z + cosf(-yaw_rad) * movement;
             
-            // Check collision before moving (player radius = 3 units)
-            if(!check_collision(new_x, new_z, 3.0f)) {
+            // Check collision with wall sliding (player radius = 3 units)
+            if(!check_collision_with_slide(player_x, player_z, &new_x, &new_z, 3.0f)) {
                 player_x = new_x;
                 player_z = new_z;
             }
@@ -111,16 +111,25 @@ int main(void)
         hexagon_distance_t hex_distances[MAP_HEX_COUNT];
         
         // Calculate squared distance from camera to each hexagon center
+        // Skip very distant hexagons early to reduce sorting overhead
+        int visible_hex_count = 0;
         for(int i = 0; i < MAP_HEX_COUNT; i++) {
             float dx = hexagons[i].center_x - camera.x;
             float dz = hexagons[i].center_z - camera.z;
-            hex_distances[i].index = i;
-            hex_distances[i].distance = dx*dx + dz*dz;  // Use squared distance
+            float dist_sq = dx*dx + dz*dz;
+            
+            // Only include hexagons within maximum render distance
+            if(dist_sq <= 160000.0f) {
+                hex_distances[visible_hex_count].index = i;
+                hex_distances[visible_hex_count].distance = dist_sq;
+                visible_hex_count++;
+            }
         }
         
         // Simple bubble sort to sort hexagons by distance (far to near)
-        for(int i = 0; i < MAP_HEX_COUNT - 1; i++) {
-            for(int j = 0; j < MAP_HEX_COUNT - 1 - i; j++) {
+        // Only sort the visible hexagons
+        for(int i = 0; i < visible_hex_count - 1; i++) {
+            for(int j = 0; j < visible_hex_count - 1 - i; j++) {
                 if(hex_distances[j].distance < hex_distances[j+1].distance) {
                     hexagon_distance_t temp = hex_distances[j];
                     hex_distances[j] = hex_distances[j+1];
@@ -130,29 +139,35 @@ int main(void)
         }
         
         // Render ceilings first (back to front, farthest geometry)
-        for(int i = 0; i < MAP_HEX_COUNT; i++) {
+        for(int i = 0; i < visible_hex_count; i++) {
             int hex_idx = hex_distances[i].index;
-            // Distance culling for ceilings (squared distance)
-            if(hex_distances[i].distance < 160000.0f) {
+            // Combined visibility culling
+            if(should_render_hexagon(&hexagons[hex_idx], &camera)) {
                 render_hexagon_ceiling(&hexagons[hex_idx], &camera, &trifmt);
             }
         }
         
-        // Render floors (back to front)
-        for(int i = 0; i < MAP_HEX_COUNT; i++) {
+        // Render floors (back to front) with LOD
+        for(int i = 0; i < visible_hex_count; i++) {
             int hex_idx = hex_distances[i].index;
-            // Distance culling for floors (squared distance)
-            if(hex_distances[i].distance < 160000.0f) {
-                render_hexagon_floor(&hexagons[hex_idx], &camera, &trifmt);
+            // Combined visibility culling  
+            if(should_render_hexagon(&hexagons[hex_idx], &camera)) {
+                int lod = get_hexagon_lod_level(&hexagons[hex_idx], &camera);
+                render_hexagon_floor_lod(&hexagons[hex_idx], &camera, &trifmt, lod);
             }
         }
         
         // Collect all wall segments for depth sorting
-        wall_segment_t wall_segments[MAP_HEX_COUNT * 6];
+        // Limit max wall segments to reduce sorting overhead
+        #define MAX_WALL_SEGMENTS 100
+        wall_segment_t wall_segments[MAX_WALL_SEGMENTS];
         int wall_count = 0;
         
         for(int hex_i = 0; hex_i < MAP_HEX_COUNT; hex_i++) {
             hexagon_t* hex = &hexagons[hex_i];
+            
+            // Skip hexagons that are not visible
+            if(!should_render_hexagon(hex, &camera)) continue;
             
             // Calculate wall segment distances for each direction
             for(int wall_dir = 0; wall_dir < 6; wall_dir++) {
@@ -190,10 +205,13 @@ int main(void)
                     // Skip walls that are too far away (distance culling)
                     if(dist_sq > 160000.0f) continue;  // ~400 unit cutoff
                     
-                    wall_segments[wall_count].distance = dist_sq;
-                    wall_segments[wall_count].hex = hex;
-                    wall_segments[wall_count].wall_dir = wall_dir;
-                    wall_count++;
+                    // Only add if we have room (prioritize closer walls)
+                    if(wall_count < MAX_WALL_SEGMENTS) {
+                        wall_segments[wall_count].distance = dist_sq;
+                        wall_segments[wall_count].hex = hex;
+                        wall_segments[wall_count].wall_dir = wall_dir;
+                        wall_count++;
+                    }
                 }
             }
         }
